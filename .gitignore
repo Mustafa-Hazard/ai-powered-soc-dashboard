@@ -1,0 +1,26 @@
+# AWS credentials & keys - NEVER commit these
+*.pem
+*.key
+.aws/
+aws-keys/
+credentials
+config
+
+# Environment variables / secrets
+.env
+*.env
+secrets.json
+
+# Python
+__pycache__/
+*.pyc
+venv/
+.venv/
+
+# OS junk
+.DS_Store
+Thumbs.db
+
+# Editor configs
+.vscode/
+.idea/
