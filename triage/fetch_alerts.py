@@ -111,9 +111,9 @@ def fetch_all_detections() -> dict:
                 "name": detection["name"],
                 "events": results,
             }
-            print(f"    -> {len(results)} matching event(s)")
+            print(f"   -> {len(results)} matching event(s)")
         except requests.exceptions.RequestException as e:
-            print(f"    -> ERROR: {e}")
+            print(f"   -> ERROR: {e}")
             all_results[technique_id] = {
                 "name": detection["name"],
                 "events": [],
