@@ -47,7 +47,8 @@ DETECTIONS = {
     },
     "T1078": {
         "name": "Successful Login Following Failed Attempts",
-        "query": '''search index=* host="ip-172-31-13-183" ("Failed password" OR "Accepted password")
+        "query": '''search index=* host="ip-172-31-13-183"
+("Failed password" OR "Accepted password")
 | rex field=_raw "Failed password for (invalid user )?(?<user>\\S+) from (?<src_ip>\\S+)"
 | rex field=_raw "Accepted password for (?<user>\\S+) from (?<src_ip>\\S+)"
 | eval status=if(match(_raw,"Failed password"),"failed","accepted")
