@@ -4,7 +4,7 @@ A hands-on SIEM + threat detection lab connecting GRC/compliance knowledge with 
 security engineering. Built to demonstrate real Tier-1 SOC analyst skills, mapped to
 MITRE ATT&CK, with a Python automation/triage layer.
 
-## Status: 🚧 In Progress (Phase 5 complete, Phase 6 underway) (Phase 4 of 6)
+## Status: 🚧 In Progress (Phase 5 complete, Phase 6 underway)
 
 ## Why This Project
 
@@ -104,23 +104,6 @@ Detailed, step-by-step documentation of each phase lives in [`/docs`](./docs):
 - **Simulated attacks:** Hydra
 - **Version control:** Git/GitHub
 
-## What's Working
-
-- End-to-end log pipeline: EC2 `auth.log` → Universal Forwarder → reverse SSH tunnel →
-  Splunk Enterprise, confirmed searchable in the Splunk web UI
-- Simulated SSH brute-force attack, fully captured in Splunk
-- First MITRE-mapped detection rule (T1110) built, saved, and scheduled as an alert
-
-## What's Next
-
-- Confirm the T1110 alert's 5-minute cron schedule saved correctly
-- Run a larger-scale Hydra attack to validate/re-tune the detection threshold
-- Build detection rules for T1078 (suspicious valid account logins) and T1059
-  (command/scripting execution)
-- Build the Python triage layer (Splunk REST API → enrich → score → summarize)
-- Backfill Phase 2–4 documentation in `/docs`
-- Write up compliance mapping (ISO 27001, NIST) tying detections to specific controls
-
 ## Python Triage Layer
 
 Located in [`/triage`](./triage). Fetches all three detections from Splunk via REST
@@ -169,5 +152,3 @@ docker run --env-file .env soc-triage
 ## Author
 
 **Mustafa Muhammad Iqbal**
-**mustafa-cyberhub.vercel.app**
-
