@@ -4,24 +4,25 @@ A hands-on SIEM + threat detection lab connecting GRC/compliance knowledge with 
 security engineering. Built to demonstrate real Tier-1 SOC analyst skills, mapped to
 MITRE ATT&CK, with a Python automation/triage layer.
 
-## Status: 🚧 In Progress (Phase 5 complete, Phase 6 underway)
+**Portfolio:** [mustafa-cyberhub.vercel.app](https://mustafa-cyberhub.vercel.app/)
+
+## Status: ✅ Core pipeline complete (Phases 0–5) · Phase 6 documentation polish in progress
 
 ## Why This Project
 
 Most portfolio projects either show compliance knowledge (ISO 27001, NIST, PDPL) *or*
 software engineering skills, rarely both. This project ties them together: detections
 are mapped not just to MITRE ATT&CK techniques, but also back to the compliance
-requirements they support (e.g. this detection supports ISO 27001 A.8.16 monitoring
-requirements) — see [`docs/compliance-mapping.md`](./docs/compliance-mapping.md).
+requirements they support — see [`docs/compliance-mapping.md`](./docs/compliance-mapping.md).
 
 ## Architecture
+
+![Architecture diagram](./docs/assets/architecture-diagram.svg)
 
 ```
 [EC2 victim-server]  --auth.log / audit.log-->  [Splunk Universal Forwarder]
         │                                              │
         │                                  sends to localhost:9997
-        │                                              │
-        │                    (this "localhost" is on the EC2 box)
         │
         ▼
 [Reverse SSH tunnel: initiated FROM the Splunk VM, target = EC2 public IP]
@@ -36,7 +37,7 @@ requirements) — see [`docs/compliance-mapping.md`](./docs/compliance-mapping.m
    Python Triage Layer ──── Fetch (REST API) → Enrich/Score → Summarize → Report
         │
         ▼
-   Dockerized, CI-linted, ready to run on demand or continuously (--watch)
+   Dockerized, CI-linted, runs on demand or continuously (--watch)
 ```
 
 **Layer 1 — Log Sources:** AWS EC2 instance (Ubuntu 24.04) generating real SSH/auth
@@ -54,7 +55,7 @@ a MITRE ATT&CK technique ID and saved as a scheduled alert.
 with transparent rule-based logic, and generates a plain-English executive summary that
 correlates related alerts (e.g. brute force → successful login → payload download) into
 a single incident narrative. Runs on demand or continuously via `--watch`, and ships as
-a Docker image.
+a Docker image, validated by CI on every push.
 
 ## MITRE ATT&CK Techniques Covered
 
@@ -91,7 +92,6 @@ Detailed, step-by-step documentation of each phase lives in [`/docs`](./docs):
 - [Phase 4 — Detection Engineering](./docs/phase-4-detection-engineering.md)
 - [Phase 5 — Python Triage Layer](./docs/phase-5-python-triage.md)
 - [Compliance Mapping](./docs/compliance-mapping.md)
-- Phase 6 — Full write-up & polish *(in progress — this README is part of it)*
 
 ## Tech Stack
 
@@ -140,15 +140,23 @@ docker run --env-file .env soc-triage
 - Detections explicitly mapped to verified ISO 27001:2022 and NIST SP 800-53 Rev 5
   controls
 
-## What's Next
+## Known Limitations (By Design — Lab Scope)
 
-- Finish Phase 6: polish full documentation and architecture diagram
-- Push all outstanding work (triage layer, CI workflow, phase docs, compliance mapping)
-  to GitHub and confirm CI passes on GitHub's runners
-- (Optional, currently deferred) Revert victim-server SSH to key-only auth
-- (Optional, currently deferred) Allocate an AWS Elastic IP to stop the public IP
-  changing on every EC2 restart
+This is a home lab, not a production deployment, and intentionally so:
+
+- Credentials are managed via `.env` files, not a secrets manager
+- SSH password authentication remains enabled on the victim server for repeatable
+  attack simulation, rather than reverted to key-only auth
+- No AWS Elastic IP allocated — the EC2 public IP changes on every restart
+- Single point of failure throughout (one Splunk VM, no HA, no log retention policy)
+- CI validates code quality and Docker build integrity only; it can't reach the local
+  Splunk VM to run true integration tests
+
+None of these block the project's goal — demonstrating the full detection engineering
+and automation pipeline end-to-end — but they'd be the first things addressed before
+any real-world deployment.
 
 ## Author
 
 **Mustafa Muhammad Iqbal**
+Portfolio: [mustafa-cyberhub.vercel.app](https://mustafa-cyberhub.vercel.app/)
