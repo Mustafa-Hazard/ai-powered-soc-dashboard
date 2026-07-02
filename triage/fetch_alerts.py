@@ -135,3 +135,4 @@ if __name__ == "__main__":
             print("  No matching events.")
         for event in data["events"]:
             print(f"  {event}")
+            
