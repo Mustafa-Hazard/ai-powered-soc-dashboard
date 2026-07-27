@@ -22,7 +22,7 @@
 A full-stack detection engineering lab built from the ground up: a real attack target on
 AWS, a Splunk Enterprise SIEM pipeline, MITRE ATT&CK-mapped detection rules validated
 against genuine simulated attacks, and a Python automation layer that triages, scores,
-and summarizes alerts — with every detection explicitly mapped back to real ISO 27001
+correlates, and summarizes alerts — with every detection explicitly mapped back to real ISO 27001
 and NIST 800-53 compliance controls.
 
 Most portfolio projects demonstrate either compliance knowledge **or** engineering
@@ -37,7 +37,7 @@ skill. This one connects both.
 - [Repository Structure](#repository-structure)
 - [Quick Start — Python Triage Layer](#quick-start--python-triage-layer)
 - [Sample Output](#sample-output)
-- [Detection Logic](#detection-logic)
+- [Detection Logic & Deduplication](#detection-logic--deduplication)
 - [Documentation](#documentation)
 - [Known Limitations](#known-limitations)
 - [Roadmap](#roadmap)
@@ -92,8 +92,9 @@ Full rationale, including honest scope notes on partial control coverage:
 | SIEM | Splunk Enterprise, Splunk Universal Forwarder |
 | Host auditing | auditd (execve syscall tracking) |
 | Automation | Python 3.12, `requests`, `python-dotenv` |
-| Containerization | Docker |
-| CI/CD | GitHub Actions (lint + build validation) |
+| Quality & Testing | `pytest`, `mypy`, `ruff`, `pip-audit` |
+| Containerization | Docker (Multi-stage, Non-root) |
+| CI/CD | GitHub Actions (Lint, Type Check, Security Audit, Unit Tests, Docker Build) |
 | Attack simulation | Hydra |
 
 ## Repository Structure
@@ -111,13 +112,24 @@ ai-powered-soc-dashboard/
 │   └── assets/
 │       └── architecture-diagram.svg
 ├── triage/
+│   ├── config.py             # Config & credential redaction
+│   ├── state.py              # Alert state & deduplication (_time hash)
 │   ├── fetch_alerts.py       # Splunk REST API client
 │   ├── enrich.py              # Severity scoring
 │   ├── summarize.py           # Narrative correlation
 │   ├── main.py                 # Orchestrator / CLI entry point
 │   ├── Dockerfile
+│   ├── .dockerignore
 │   ├── requirements.txt
 │   └── .env.example
+├── tests/
+│   ├── conftest.py           # Test fixtures
+│   ├── test_config.py        # Config & secret redaction tests
+│   ├── test_enrich.py        # Scoring logic tests
+│   ├── test_summarize.py     # Correlation narrative tests
+│   ├── test_fetch_alerts.py  # Mocked API client tests
+│   ├── test_state.py         # State deduplication tests
+│   └── test_main.py          # CLI & orchestration tests
 ├── .github/workflows/ci.yml
 └── README.md
 ```
@@ -131,15 +143,28 @@ cd ai-powered-soc-dashboard/triage
 pip install -r requirements.txt
 cp .env.example .env        # fill in your own Splunk credentials
 
-python main.py               # run once
+python main.py               # run once (with deduplication)
+python main.py --no-dedup    # run once, ignoring deduplication state
+python main.py --reset-state # reset persistent state cache
 python main.py --watch       # run continuously (default: every 300s)
+python main.py --debug       # enable verbose debug logging
+```
+
+> **Note on SSL Verification:** SSL certificate verification defaults to `SPLUNK_VERIFY_SSL=true`. If connecting to a local Splunk lab instance using self-signed certificates, set `SPLUNK_VERIFY_SSL=false` in `.env` to explicitly bypass SSL verification.
+
+**Running Tests:**
+
+```bash
+pytest tests/ -v
+mypy triage
+ruff check triage tests
 ```
 
 **Docker:**
 
 ```bash
-docker build -t soc-triage .
-docker run --env-file .env soc-triage
+docker build -t soc-triage triage/
+docker run --env-file triage/.env soc-triage
 ```
 
 > Requires a running Splunk Enterprise instance reachable at the host/port specified
@@ -177,7 +202,7 @@ ALERT DETAIL (3 alert(s), ranked by severity)
         Executed 'wget' targeting http://example.com on ip-172-31-13-183
 ```
 
-## Detection Logic
+## Detection Logic & Deduplication
 
 Severity scoring is **deliberately rule-based and auditable**, not a black-box model —
 a SOC tool's reasoning should be inspectable by an analyst:
@@ -187,6 +212,8 @@ a SOC tool's reasoning should be inspectable by an analyst:
   login after a brute force means the attack likely worked
 - **T1059:** fixed at 75 — any `wget`/`curl` execution in this environment is inherently
   suspicious regardless of volume
+
+**Alert State & Deduplication:** `state.py` tracks seen alerts across runs using a deterministic hash of the event's technique ID and fields. It explicitly uses `_time` (event occurrence timestamp) rather than `_indextime` (ingestion time) to guarantee idempotent hashing across index re-runs.
 
 The narrative summarizer correlates alerts by **victim host** (the one field shared
 across all three detections) into a single incident story, rather than presenting three
@@ -215,15 +242,14 @@ This is a home lab, and intentionally scoped as one:
 - SSH password auth remains enabled on the victim server for repeatable attack testing
 - No AWS Elastic IP — the EC2 public IP changes on every restart
 - Single point of failure throughout (one Splunk VM, no HA, no log retention policy)
-- CI validates lint + Docker build only; it cannot reach the local Splunk VM to run true
-  integration tests against live data
+- CI validates lint, type checks, unit tests, dependency vulnerabilities, and Docker build; it cannot reach the local Splunk VM to run true integration tests against live data
 
 These would be the first items addressed before any production deployment — not
 oversights, but a conscious lab-scope decision.
 
 ## Roadmap
 
-- [ ] Persistent alert state / deduplication across triage runs
+- [x] Persistent alert state / deduplication across triage runs
 - [ ] Optional LLM-based narrative generation as an alternative to the rule-based summarizer
 - [ ] Streaming/real-time ingestion instead of interval polling
 - [ ] AWS Elastic IP + hardened victim-server SSH config

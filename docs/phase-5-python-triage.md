@@ -11,21 +11,30 @@ ranked report — without needing to log into the Splunk UI at all.
 ```
 fetch_alerts.py  ──►  enrich.py  ──►  summarize.py  ──►  main.py (report)
   (Splunk REST API)    (scoring)      (narrative)         (orchestrator)
+       ▲                                                     │
+       │                                                     ▼
+   config.py                                             state.py
+(SplunkConfig & secrets)                             (alert state & dedup)
 ```
 
 Each stage is a separate module rather than one script, so the logic stays testable
 and each piece has a single responsibility:
 
+- **`config.py`** — centralized configuration management (`SplunkConfig`), credential
+  redaction (`SPLUNK_PASS` masked in string representations), scoring constants, and structured logging.
+- **`state.py`** — persistent alert state manager (`AlertStateManager`) that deduplicates
+  previously reported alerts across runs by computing an MD5 hash of event fields using `_time`
+  (event timestamp).
 - **`fetch_alerts.py`** — authenticates to Splunk's REST API and runs each of the
   three MITRE-mapped detection queries (T1110, T1078, T1059), returning raw matching
-  events per technique
+  events per technique. Custom exceptions (`SplunkAPIError`, `SplunkConnectionError`) handle API failures.
 - **`enrich.py`** — scores every event 0–100 using transparent, technique-specific
-  rules (not a black-box model) and assigns a severity label (Low/Medium/High/Critical)
+  rules (not a black-box model) and assigns a severity label (Low/Medium/High/Critical).
 - **`summarize.py`** — correlates alerts that share a victim host into a single
   attack narrative, ordered by logical attack chain (brute force → valid account →
-  execution), rather than presenting three disconnected events
-- **`main.py`** — orchestrates all three stages and prints the final report; also
-  supports `--watch` mode for continuous monitoring
+  execution), rather than presenting three disconnected events.
+- **`main.py`** — orchestrates all stages and prints the final report; supports `--watch` mode
+  for continuous monitoring, `--debug` for verbose logs, and `--no-dedup`/`--reset-state` for state control.
 
 ## Connecting to Splunk's REST API
 
@@ -33,17 +42,19 @@ Splunk's management API runs on port **8089** (separate from the web UI's 8000).
 Authentication uses the same `admin`/password credentials as the web UI, passed as
 HTTP basic auth.
 
+SSL Certificate Verification defaults to `verify_ssl = True`. For lab setups using
+self-signed SSL certificates, `SPLUNK_VERIFY_SSL=false` can be explicitly set in `.env`.
+
 Searches are run in **oneshot** mode via `POST /services/search/jobs`, which returns
-results synchronously — no need to poll a job ID and wait, which keeps the script
-simple for this use case (each search finishes in well under a second against this
-lab's data volume).
+results synchronously — no need to poll a job ID and wait, keeping execution fast and predictable.
 
 ```python
 response = requests.post(
-    f"{BASE_URL}/services/search/jobs",
-    auth=(SPLUNK_USER, SPLUNK_PASS),
+    f"{config.base_url()}/services/search/jobs",
+    auth=(config.user, config.password),
     data={"search": query, "output_mode": "json", "exec_mode": "oneshot"},
-    verify=False,  # self-signed cert, lab environment only
+    verify=config.verify_ssl,
+    timeout=config.timeout,
 )
 ```
 
@@ -81,48 +92,74 @@ queries in `fetch_alerts.py`, since neither originally carried a `host` field in
 output — without a shared key, the correlation logic couldn't tell that all three
 alerts were part of the same incident.
 
+## Persistent State & Alert Deduplication
+
+To prevent alert fatigue and duplicate reports during periodic or `--watch` runs, `state.py` maintains a `state.json` cache.
+Alert hashes are calculated using `_time` (event occurrence timestamp) rather than `_indextime` (Splunk ingestion time):
+
+```python
+def compute_alert_hash(technique_id: str, raw_event: dict) -> str:
+    payload = f"{technique_id}:{raw_event.get('_time')}:{raw_event.get('host')}:{raw_event.get('src_ip')}:{raw_event.get('user')}"
+    return hashlib.md5(payload.encode("utf-8")).hexdigest()
+```
+
+This guarantees idempotent hashing regardless of indexer re-runs or log re-ingestion.
+
 ## Running the Triage Layer
 
 ```bash
 cd triage
 pip install -r requirements.txt
 cp .env.example .env   # fill in real Splunk credentials — never commit .env
-python main.py              # run once
+
+python main.py              # run once with deduplication
+python main.py --no-dedup    # ignore deduplication state
+python main.py --reset-state # clear deduplication state cache
 python main.py --watch      # run continuously, default every 300s
 python main.py --watch --interval 60   # custom interval
+python main.py --debug      # enable verbose debug logging
 ```
+
+## Unit Testing
+
+A comprehensive test suite in `tests/` covers all modules using `pytest`:
+
+```bash
+pytest tests/ -v
+mypy triage
+ruff check triage tests
+```
+
+- **`test_enrich.py`**: Tests scoring calculations, threshold caps, severity labels, and edge cases.
+- **`test_summarize.py`**: Tests host grouping, single and multi-stage attack narratives, and multi-host scenarios.
+- **`test_fetch_alerts.py`**: Mocks Splunk API calls for HTTP errors, timeouts, connection failures, and invalid JSON responses.
+- **`test_state.py`**: Tests `_time` timestamp hashing, persistent state load/save/reset operations, and deduplication filtering.
+- **`test_main.py`**: Tests CLI argument parsing (`--watch`, `--reset-state`, `--no-dedup`, `--debug`) and orchestration.
 
 ## Docker
 
-Packaged as a container so the triage layer can run independently of the local Python
-environment:
+Packaged as an unprivileged, multi-stage Docker container:
 
 ```bash
-docker build -t soc-triage .
-docker run --env-file .env soc-triage
+docker build -t soc-triage triage/
+docker run --env-file triage/.env soc-triage
 ```
 
-Credentials are injected at runtime via `--env-file`, never baked into the image.
-Verified to produce identical output to running natively.
+Credentials are injected at runtime via `--env-file`, never baked into the image. The image runs as non-root user `appuser` (uid 10001).
 
 ## Continuous Integration
 
-`.github/workflows/ci.yml` runs on every push touching `triage/`:
+`.github/workflows/ci.yml` runs on every push/PR:
 
-1. Installs dependencies and lints with `flake8`
-2. Builds the Docker image and confirms it succeeds
+1. Lints code formatting with `ruff`
+2. Validates type hints with `mypy`
+3. Audits dependencies for security vulnerabilities with `pip-audit`
+4. Executes unit test suite with `pytest`
+5. Validates multi-stage Docker container build
 
 CI intentionally does **not** attempt to run the triage layer against live Splunk
 data — GitHub's runners can't reach the home-network Splunk VM, and that's the
-correct scope for this CI: it validates code quality and build integrity, not live
-behavior. True integration testing happens locally against the real environment.
-
-## Environment Variables
-
-Credentials were deliberately kept out of source: `fetch_alerts.py` reads
-`SPLUNK_HOST`, `SPLUNK_PORT`, `SPLUNK_USER`, and `SPLUNK_PASS` from the environment
-(loaded via `python-dotenv` from a local `.env` file, gitignored). `.env.example`
-documents the required variables without real values.
+correct scope for this CI: it validates code quality, type safety, test coverage, and build integrity.
 
 ## Sample Output
 
@@ -158,21 +195,6 @@ Summary: 2 Critical, 1 High severity alert(s)
 ======================================================================
 ```
 
-## What's Not Included (By Design, For Now)
-
-- **LLM-based summarization:** the README originally scoped this as a stretch goal.
-  The current summarizer is fully rule-based and deterministic instead — a
-  conscious choice to keep the tool auditable and dependency-free, though a real
-  LLM call (e.g. via the Anthropic API) remains a natural future extension if richer
-  natural-language variation is wanted.
-- **Persistent alert state / deduplication:** each run re-fetches and re-reports all
-  matching events; there's no tracking of "already seen" alerts across runs yet.
-- **Real-time/streaming ingestion:** `--watch` mode polls on an interval rather than
-  subscribing to a live event stream.
-
 ## Outcome
 
-A working, containerized, CI-validated Python layer that turns three raw Splunk
-detections into a single prioritized, human-readable incident report — closing the
-loop described in the project's original architecture diagram (Layer 4: Enrich →
-Score → Summarize).
+A robust, type-safe, containerized, stateful, and thoroughly tested Python layer that turns raw Splunk detections into a prioritized, human-readable incident report.
