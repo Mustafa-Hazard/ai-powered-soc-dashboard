@@ -7,53 +7,78 @@ Takes raw detection events (from fetch_alerts.py) and enriches them with:
     - a severity label (Low / Medium / High / Critical)
     - a human-readable summary line
 
-Scoring logic is intentionally simple and rule-based rather than a black box -
+Scoring logic is intentionally simple and rule-based rather than a black box:
 each technique has its own transparent scoring function so the reasoning is
-auditable, which matters for a SOC tool.
+auditable, which is essential for a SOC triage engine.
 """
 
+import logging
+from collections.abc import Callable
 from typing import Any
+
+from config import (
+    SCORE_CRITICAL_THRESHOLD,
+    SCORE_HIGH_THRESHOLD,
+    SCORE_MEDIUM_THRESHOLD,
+    T1059_FIXED_SCORE,
+    T1078_BASE_SCORE,
+    T1078_MAX_SCORE,
+    T1078_PER_PRIOR_FAIL_SCORE,
+    T1110_BASE_SCORE,
+    T1110_MAX_SCORE,
+    T1110_PER_ATTEMPT_SCORE,
+)
+
+logger = logging.getLogger("soc_triage.enrich")
 
 
 def score_t1110(event: dict[str, Any]) -> int:
     """
     Brute force severity scales with failed attempt volume.
+
     A handful of failures is low-severity noise; dozens+ is a real attack.
+    Formula: min(100, 20 + (failed_attempts * 2))
     """
     try:
         attempts = int(event.get("failed_attempts", 0))
     except (TypeError, ValueError):
         attempts = 0
 
-    # 5 attempts (our alert threshold) -> ~30, scaling up, capped at 100
-    score = min(100, 20 + (attempts * 2))
+    attempts = max(attempts, 0)
+
+    score = min(T1110_MAX_SCORE, T1110_BASE_SCORE + (attempts * T1110_PER_ATTEMPT_SCORE))
     return score
 
 
 def score_t1078(event: dict[str, Any]) -> int:
     """
-    A successful login after failed attempts means the attacker likely got in -
-    this starts high severity by default and climbs with prior failure count.
+    A successful login after failed attempts indicates a likely account compromise.
+
+    Starts with a high base severity (60) and scales up with prior failure volume.
+    Formula: min(100, 60 + prior_failed_attempts)
     """
     try:
         prior_failed = int(event.get("prior_failed_attempts", 0))
     except (TypeError, ValueError):
         prior_failed = 0
 
-    # Base severity of 60 (a real successful compromise), scaling toward 100
-    score = min(100, 60 + prior_failed)
+    prior_failed = max(prior_failed, 0)
+
+    score = min(T1078_MAX_SCORE, T1078_BASE_SCORE + (prior_failed * T1078_PER_PRIOR_FAIL_SCORE))
     return score
 
 
 def score_t1059(event: dict[str, Any]) -> int:
     """
-    Any wget/curl execution post-login is inherently suspicious in this lab
-    context (no legitimate reason for it in this scenario) - fixed high score.
+    Command execution (wget/curl) post-login.
+
+    In this lab context, command utility downloads post-compromise are inherently
+    suspicious regardless of frequency, yielding a fixed high score (75).
     """
-    return 75
+    return T1059_FIXED_SCORE
 
 
-SCORERS = {
+SCORERS: dict[str, Callable[[dict[str, Any]], int]] = {
     "T1110": score_t1110,
     "T1078": score_t1078,
     "T1059": score_t1059,
@@ -61,12 +86,12 @@ SCORERS = {
 
 
 def label_for_score(score: int) -> str:
-    """Maps a numeric score to a human severity label."""
-    if score >= 85:
+    """Maps a numeric score (0-100) to a human severity label."""
+    if score >= SCORE_CRITICAL_THRESHOLD:
         return "Critical"
-    if score >= 60:
+    if score >= SCORE_HIGH_THRESHOLD:
         return "High"
-    if score >= 35:
+    if score >= SCORE_MEDIUM_THRESHOLD:
         return "Medium"
     return "Low"
 
@@ -74,40 +99,44 @@ def label_for_score(score: int) -> str:
 def summarize_event(technique_id: str, technique_name: str, event: dict[str, Any]) -> str:
     """
     Produces a one-line human-readable summary for an event, tailored per
-    technique so the output reads like an analyst wrote it, not a data dump.
+    technique so the output reads like an analyst description.
     """
     if technique_id == "T1110":
-        return (
-            f"{event.get('failed_attempts', '?')} failed SSH login attempts "
-            f"from {event.get('src_ip', 'unknown IP')} targeting user "
-            f"'{event.get('user', 'unknown')}'"
-        )
+        attempts = event.get("failed_attempts", "?")
+        src_ip = event.get("src_ip", "unknown IP")
+        user = event.get("user", "unknown")
+        return f"{attempts} failed SSH login attempts from {src_ip} targeting user '{user}'"
+
     if technique_id == "T1078":
-        return (
-            f"Successful login as '{event.get('user', 'unknown')}' from "
-            f"{event.get('src_ip', 'unknown IP')} after "
-            f"{event.get('prior_failed_attempts', '?')} failed attempts"
-        )
+        user = event.get("user", "unknown")
+        src_ip = event.get("src_ip", "unknown IP")
+        prior_failed = event.get("prior_failed_attempts", "?")
+        return f"Successful login as '{user}' from {src_ip} after {prior_failed} failed attempts"
+
     if technique_id == "T1059":
-        return (
-            f"Executed '{event.get('command', 'unknown')}' targeting "
-            f"{event.get('arg1', 'unknown target')} on {event.get('host', 'host')}"
-        )
+        command = event.get("command", "unknown")
+        arg1 = event.get("arg1", "unknown target")
+        host = event.get("host", "host")
+        return f"Executed '{command}' targeting {arg1} on {host}"
+
     return f"{technique_name}: {event}"
 
 
 def enrich_detections(raw_results: dict[str, Any]) -> list[dict[str, Any]]:
     """
-    Takes the dict returned by fetch_alerts.fetch_all_detections() and
+    Takes the dictionary returned by fetch_alerts.fetch_all_detections() and
     flattens it into a single sorted, scored list of triage-ready alerts.
+
+    Returns alerts ordered by score descending (highest severity first).
     """
-    enriched = []
+    enriched: list[dict[str, Any]] = []
 
     for technique_id, data in raw_results.items():
         technique_name = data.get("name", technique_id)
         scorer = SCORERS.get(technique_id)
 
-        for event in data.get("events", []):
+        events = data.get("events", [])
+        for event in events:
             score = scorer(event) if scorer else 0
             enriched.append({
                 "technique_id": technique_id,
@@ -118,6 +147,6 @@ def enrich_detections(raw_results: dict[str, Any]) -> list[dict[str, Any]]:
                 "raw_event": event,
             })
 
-    # Highest severity first - this is what an analyst wants to see at the top
     enriched.sort(key=lambda alert: alert["score"], reverse=True)
+    logger.debug("Enriched and scored %d alert(s)", len(enriched))
     return enriched

@@ -4,50 +4,53 @@ Phase 5 - SOC Dashboard Python Triage Layer
 
 Generates a plain-English executive summary from the enriched alert list.
 
-This is intentionally rule-based rather than an LLM call - it's fully
-deterministic and auditable, and correlates alerts that share a victim host
-into a single attack narrative (e.g. brute force -> successful login ->
-post-exploitation command execution), which is what an analyst actually
-wants to read first.
+This engine is rule-based and auditable. It correlates alerts sharing the same
+victim host into a cohesive attack narrative (e.g. brute force -> successful login
+-> post-exploitation command execution), presenting a multi-stage incident story.
 """
 
-from typing import Any
+import logging
 from collections import defaultdict
+from typing import Any
+
+logger = logging.getLogger("soc_triage.summarize")
 
 
-def _group_by_host(alerts: list[dict[str, Any]]) -> dict[str, list[dict]]:
+def _group_by_host(alerts: list[dict[str, Any]]) -> dict[str, list[dict[str, Any]]]:
     """
-    Groups alerts by the victim host they occurred on. Host is used as the
-    correlation key (rather than src_ip) because it's the one field every
-    technique's query reliably tags - src_ip identifies the attacker, which
-    is only present on login-related events, not on-host execution events.
-    Using host means a brute force, the login it led to, and any commands
-    run afterward all correlate into a single narrative.
+    Groups alerts by the victim host they occurred on.
+
+    Host is used as the correlation key because it is present across all technique
+    queries, allowing login attempts and subsequent shell commands to be joined.
     """
-    grouped = defaultdict(list)
+    grouped: dict[str, list[dict[str, Any]]] = defaultdict(list)
     for alert in alerts:
-        raw = alert["raw_event"]
-        key = raw.get("host", "unknown")
-        grouped[key].append(alert)
+        raw = alert.get("raw_event", {})
+        host_key = raw.get("host", "unknown-host")
+        grouped[host_key].append(alert)
     return grouped
 
 
 def _attacker_ip_for_group(group: list[dict[str, Any]]) -> str:
-    """Pulls the attacker's src_ip from whichever event in the group has one."""
+    """Extracts the attacker's source IP from the first event in the group containing one."""
     for alert in group:
-        src_ip = alert["raw_event"].get("src_ip")
+        raw = alert.get("raw_event", {})
+        src_ip = raw.get("src_ip")
         if src_ip:
-            return src_ip
+            return str(src_ip)
     return "an unidentified source"
 
 
 def _narrative_for_group(host: str, group: list[dict[str, Any]]) -> str:
     """
-    Builds a one-paragraph narrative for a group of alerts sharing the same
-    victim host, ordered by the logical attack chain (brute force -> valid
-    account -> execution) rather than by score.
+    Builds a one-paragraph narrative for a group of alerts sharing a victim host.
+
+    Orders narrative events by attack lifecycle (T1110 brute force -> T1078 valid
+    accounts -> T1059 command execution) rather than raw severity score.
     """
-    by_technique = {alert["technique_id"]: alert for alert in group}
+    by_technique: dict[str, dict[str, Any]] = {
+        alert["technique_id"]: alert for alert in group if "technique_id" in alert
+    }
     chain_order = ["T1110", "T1078", "T1059"]
     present = [t for t in chain_order if t in by_technique]
 
@@ -55,36 +58,36 @@ def _narrative_for_group(host: str, group: list[dict[str, Any]]) -> str:
         return ""
 
     attacker_ip = _attacker_ip_for_group(group)
-    parts = []
-    top_score = max(alert["score"] for alert in group)
+    parts: list[str] = []
+    top_score = max((alert.get("score", 0) for alert in group), default=0)
 
     if "T1110" in present:
-        ev = by_technique["T1110"]["raw_event"]
+        ev = by_technique["T1110"].get("raw_event", {})
+        attempts = ev.get("failed_attempts", "?")
         parts.append(
-            f"{ev.get('failed_attempts', '?')} failed SSH login attempts "
-            f"were observed from {attacker_ip} against {host}"
+            f"{attempts} failed SSH login attempts were observed from {attacker_ip} against {host}"
         )
 
     if "T1078" in present:
-        ev = by_technique["T1078"]["raw_event"]
+        ev = by_technique["T1078"].get("raw_event", {})
+        user = ev.get("user", "unknown")
+        prior_failed = ev.get("prior_failed_attempts", "?")
         if parts:
             parts.append(
-                f"followed by a successful login as '{ev.get('user', 'unknown')}', "
-                f"indicating the brute force succeeded"
+                f"followed by a successful login as '{user}', indicating the brute force succeeded"
             )
         else:
             parts.append(
-                f"A successful login as '{ev.get('user', 'unknown')}' was observed "
-                f"on {host} from {attacker_ip} after "
-                f"{ev.get('prior_failed_attempts', '?')} failed attempts"
+                f"A successful login as '{user}' was observed on {host} from {attacker_ip} "
+                f"after {prior_failed} failed attempts"
             )
 
     if "T1059" in present:
-        ev = by_technique["T1059"]["raw_event"]
+        ev = by_technique["T1059"].get("raw_event", {})
+        cmd = ev.get("command", "unknown")
+        arg1 = ev.get("arg1", "an external target")
         command_phrase = (
-            f"execution of '{ev.get('command', 'unknown')}' targeting "
-            f"{ev.get('arg1', 'an external target')} - consistent with "
-            f"post-exploitation payload retrieval"
+            f"execution of '{cmd}' targeting {arg1} - consistent with post-exploitation payload retrieval"
         )
         if parts:
             parts.append(f"and was followed by {command_phrase}")
@@ -96,8 +99,8 @@ def _narrative_for_group(host: str, group: list[dict[str, Any]]) -> str:
 
     if len(present) >= 2 and top_score >= 85:
         narrative += (
-            f" This sequence indicates a likely successful compromise of {host} "
-            f"originating from {attacker_ip}, and should be treated as a priority incident."
+            f" This sequence indicates a likely successful compromise of {host} originating "
+            f"from {attacker_ip}, and should be treated as a priority incident."
         )
 
     return narrative
@@ -105,18 +108,18 @@ def _narrative_for_group(host: str, group: list[dict[str, Any]]) -> str:
 
 def generate_executive_summary(alerts: list[dict[str, Any]]) -> str:
     """
-    Produces the full executive summary text: an overall headline plus one
-    narrative paragraph per correlated host group.
+    Produces executive summary text: high-level metrics headline followed by
+    narrative paragraphs grouped per victim host.
     """
     if not alerts:
         return "No alerts were triggered in this run. No action needed."
 
-    critical = sum(1 for a in alerts if a["severity"] == "Critical")
-    high = sum(1 for a in alerts if a["severity"] == "High")
+    critical = sum(1 for a in alerts if a.get("severity") == "Critical")
+    high = sum(1 for a in alerts if a.get("severity") == "High")
+    unique_techniques = len({a.get("technique_id") for a in alerts if "technique_id" in a})
 
     headline = (
-        f"{len(alerts)} alert(s) triggered across "
-        f"{len({a['technique_id'] for a in alerts})} MITRE ATT&CK technique(s). "
+        f"{len(alerts)} alert(s) triggered across {unique_techniques} MITRE ATT&CK technique(s). "
     )
     if critical:
         headline += f"{critical} alert(s) rated Critical severity. "
@@ -124,7 +127,7 @@ def generate_executive_summary(alerts: list[dict[str, Any]]) -> str:
         headline += f"{high} alert(s) rated High severity. "
 
     groups = _group_by_host(alerts)
-    narratives = []
+    narratives: list[str] = []
     for host, group in groups.items():
         text = _narrative_for_group(host, group)
         if text:
