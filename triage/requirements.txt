@@ -1,2 +1,10 @@
-requests>=2.31.0
-python-dotenv>=1.0.0
+# Core dependencies
+requests>=2.31.0,<3.0.0
+python-dotenv>=1.0.0,<2.0.0
+
+# Development, testing, and linting dependencies
+pytest>=9.0.3
+mypy>=1.8.0,<2.0.0
+ruff>=0.2.0,<1.0.0
+pip-audit>=2.7.0,<3.0.0
+types-requests>=2.31.0
