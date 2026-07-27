@@ -11,11 +11,18 @@ config
 *.env
 secrets.json
 
+# Alert state storage
+state.json
+triage/state.json
+
 # Python
 __pycache__/
 *.pyc
 venv/
 .venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
 
 # OS junk
 .DS_Store
