@@ -19,7 +19,7 @@ import argparse
 import logging
 import sys
 import time
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 from config import DEFAULT_STATE_FILE, SplunkConfig, setup_logging
@@ -27,6 +27,17 @@ from enrich import enrich_detections
 from fetch_alerts import fetch_all_detections
 from state import AlertStateManager
 from summarize import generate_executive_summary
+from web import app, application, handler
+
+__all__ = [
+    "app",
+    "application",
+    "handler",
+    "main",
+    "print_report",
+    "run_once",
+    "run_watch",
+]
 
 logger = logging.getLogger("soc_triage.main")
 
@@ -80,7 +91,7 @@ def run_once(
     use_dedup: bool = True,
 ) -> list[dict[str, Any]]:
     """Runs a single pass of the triage pipeline."""
-    timestamp = datetime.now(timezone.utc).isoformat(timespec="seconds")
+    timestamp = datetime.now(UTC).isoformat(timespec="seconds")
     logger.info("[%s] Fetching detections from Splunk...", timestamp)
 
     raw_results = fetch_all_detections(config=config)

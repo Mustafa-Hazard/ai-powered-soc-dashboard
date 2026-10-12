@@ -91,8 +91,10 @@ Full rationale, including honest scope notes on partial control coverage:
 | Cloud | AWS (EC2, IAM) |
 | SIEM | Splunk Enterprise, Splunk Universal Forwarder |
 | Host auditing | auditd (execve syscall tracking) |
-| Automation | Python 3.12, `requests`, `python-dotenv` |
-| Quality & Testing | `pytest`, `mypy`, `ruff`, `pip-audit` |
+| Automation & Web API | Python 3.12, FastAPI, Uvicorn, `requests`, `python-dotenv` |
+| Web Dashboard | Vanilla HTML5/CSS3 (Glassmorphism, Cyber Dark Theme), JS (ES6+) |
+| Cloud Deployment | Vercel Serverless Functions (`vercel.json`), AWS EC2 |
+| Quality & Testing | `pytest` (39 unit/API tests), `mypy`, `ruff`, `pip-audit` |
 | Containerization | Docker (Multi-stage, Non-root) |
 | CI/CD | GitHub Actions (Lint, Type Check, Security Audit, Unit Tests, Docker Build) |
 | Attack simulation | Hydra |

@@ -22,7 +22,7 @@ COPY --from=builder /root/.local /home/appuser/.local
 ENV PATH=/home/appuser/.local/bin:$PATH
 
 # Copy application source files
-COPY config.py state.py fetch_alerts.py enrich.py summarize.py main.py ./
+COPY config.py state.py fetch_alerts.py enrich.py summarize.py main.py web.py index.html ./
 
 # Switch to non-root user
 USER appuser

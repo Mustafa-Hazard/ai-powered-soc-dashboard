@@ -1,0 +1,939 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AI-Powered SOC Dashboard | SIEM Detection & GRC Triage Engine</title>
+  <meta name="description" content="A hands-on cloud-native SIEM & threat detection dashboard connecting MITRE ATT&CK detections with ISO 27001:2022 and NIST SP 800-53 Rev 5 compliance controls.">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg-primary: #070a12;
+      --bg-surface: #0d1322;
+      --bg-surface-elevated: #131c31;
+      --bg-surface-card: rgba(19, 28, 49, 0.7);
+      --border-subtle: rgba(255, 255, 255, 0.08);
+      --border-focus: rgba(0, 242, 254, 0.4);
+      --text-primary: #f8fafc;
+      --text-secondary: #94a3b8;
+      --text-muted: #64748b;
+      --accent-cyan: #00f2fe;
+      --accent-blue: #4facfe;
+      --accent-purple: #7928ca;
+      --crit-color: #f43f5e;
+      --crit-bg: rgba(244, 63, 94, 0.12);
+      --crit-border: rgba(244, 63, 94, 0.35);
+      --high-color: #f97316;
+      --high-bg: rgba(249, 115, 22, 0.12);
+      --high-border: rgba(249, 115, 22, 0.35);
+      --med-color: #eab308;
+      --med-bg: rgba(234, 179, 8, 0.12);
+      --med-border: rgba(234, 179, 8, 0.35);
+      --low-color: #10b981;
+      --low-bg: rgba(16, 185, 129, 0.12);
+      --low-border: rgba(16, 185, 129, 0.35);
+      --radius-sm: 6px;
+      --radius-md: 10px;
+      --radius-lg: 16px;
+      --radius-xl: 20px;
+      --shadow-sm: 0 2px 8px rgba(0, 0, 0, 0.4);
+      --shadow-glow: 0 0 24px rgba(0, 242, 254, 0.15);
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      background-color: var(--bg-primary);
+      background-image: 
+        radial-gradient(circle at 15% 10%, rgba(0, 242, 254, 0.05) 0%, transparent 40%),
+        radial-gradient(circle at 85% 20%, rgba(121, 40, 202, 0.07) 0%, transparent 45%),
+        radial-gradient(circle at 50% 80%, rgba(15, 23, 42, 0.8) 0%, transparent 60%);
+      color: var(--text-primary);
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      line-height: 1.5;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      overflow-x: hidden;
+    }
+    header {
+      background: rgba(13, 19, 34, 0.85);
+      backdrop-filter: blur(16px);
+      border-bottom: 1px solid var(--border-subtle);
+      position: sticky;
+      top: 0;
+      z-index: 100;
+      padding: 0.85rem 1.75rem;
+    }
+    .header-container {
+      max-width: 1440px;
+      margin: 0 auto;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 1.5rem;
+      flex-wrap: wrap;
+    }
+    .brand { display: flex; align-items: center; gap: 0.85rem; text-decoration: none; color: inherit; }
+    .brand-icon {
+      width: 40px; height: 40px;
+      background: linear-gradient(135deg, rgba(0, 242, 254, 0.2), rgba(121, 40, 202, 0.3));
+      border: 1px solid var(--border-focus);
+      border-radius: var(--radius-md);
+      display: flex; align-items: center; justify-content: center;
+      font-size: 1.35rem; box-shadow: var(--shadow-glow);
+    }
+    .brand-text h1 {
+      font-size: 1.15rem; font-weight: 700; letter-spacing: -0.02em;
+      background: linear-gradient(90deg, #ffffff 40%, var(--accent-cyan) 100%);
+      -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+    }
+    .brand-text p { font-size: 0.75rem; color: var(--text-secondary); font-family: 'JetBrains Mono', monospace; }
+    .header-telemetry { display: flex; align-items: center; gap: 0.75rem; flex-wrap: wrap; }
+    .status-pill {
+      display: inline-flex; align-items: center; gap: 0.5rem;
+      background: rgba(15, 23, 42, 0.6); border: 1px solid var(--border-subtle);
+      border-radius: 9999px; padding: 0.35rem 0.85rem; font-size: 0.75rem;
+      font-family: 'JetBrains Mono', monospace; color: var(--text-secondary);
+    }
+    .status-dot {
+      width: 8px; height: 8px; border-radius: 50%;
+      background: var(--low-color); box-shadow: 0 0 10px var(--low-color);
+      animation: pulse 2s infinite;
+    }
+    @keyframes pulse { 0%, 100% { opacity: 1; transform: scale(1); } 50% { opacity: 0.4; transform: scale(0.9); } }
+    .header-actions { display: flex; align-items: center; gap: 0.6rem; }
+    .btn {
+      display: inline-flex; align-items: center; justify-content: center; gap: 0.5rem;
+      padding: 0.45rem 0.95rem; border-radius: var(--radius-md); font-size: 0.82rem;
+      font-weight: 500; cursor: pointer; transition: all 0.2s ease;
+      text-decoration: none; border: 1px solid transparent; font-family: inherit;
+    }
+    .btn-primary {
+      background: linear-gradient(135deg, #0284c7, #0369a1); color: #ffffff;
+      border-color: rgba(56, 189, 248, 0.4); box-shadow: 0 2px 10px rgba(2, 132, 199, 0.3);
+    }
+    .btn-primary:hover { background: linear-gradient(135deg, #0369a1, #0284c7); transform: translateY(-1px); }
+    .btn-secondary { background: rgba(255, 255, 255, 0.05); color: var(--text-primary); border-color: var(--border-subtle); }
+    .btn-secondary:hover { background: rgba(255, 255, 255, 0.1); border-color: var(--border-focus); }
+    .btn-link { background: transparent; color: var(--text-secondary); border-color: var(--border-subtle); padding: 0.45rem 0.75rem; }
+    .btn-link:hover { color: var(--text-primary); }
+    main { max-width: 1440px; margin: 1.5rem auto; padding: 0 1.5rem; flex: 1; width: 100%; }
+    .stats-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 1.25rem; margin-bottom: 1.75rem; }
+    .stat-card {
+      background: var(--bg-surface-card); backdrop-filter: blur(12px); border: 1px solid var(--border-subtle);
+      border-radius: var(--radius-lg); padding: 1.25rem 1.5rem; display: flex; flex-direction: column;
+      justify-content: space-between; position: relative; overflow: hidden; box-shadow: var(--shadow-sm);
+      transition: transform 0.2s ease, border-color 0.2s ease;
+    }
+    .stat-card:hover { transform: translateY(-2px); border-color: var(--border-focus); }
+    .stat-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 0.6rem; }
+    .stat-title { font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.06em; color: var(--text-muted); font-weight: 600; }
+    .stat-badge { font-size: 0.7rem; font-family: 'JetBrains Mono', monospace; padding: 0.2rem 0.5rem; border-radius: var(--radius-sm); font-weight: 600; }
+    .stat-main { display: flex; align-items: baseline; gap: 0.75rem; margin-bottom: 0.4rem; }
+    .stat-value { font-size: 2.1rem; font-weight: 800; letter-spacing: -0.03em; line-height: 1; }
+    .stat-unit { font-size: 0.85rem; color: var(--text-secondary); font-weight: 500; }
+    .stat-footer { font-size: 0.75rem; color: var(--text-secondary); display: flex; align-items: center; gap: 0.4rem; }
+    .tabs-nav { display: flex; align-items: center; gap: 0.4rem; border-bottom: 1px solid var(--border-subtle); margin-bottom: 1.5rem; overflow-x: auto; }
+    .tab-btn {
+      background: transparent; border: none; color: var(--text-secondary); font-size: 0.88rem; font-weight: 500;
+      padding: 0.75rem 1.15rem; border-radius: var(--radius-md) var(--radius-md) 0 0; cursor: pointer;
+      display: inline-flex; align-items: center; gap: 0.5rem; position: relative; transition: all 0.2s ease;
+      font-family: inherit; white-space: nowrap;
+    }
+    .tab-btn:hover { color: var(--text-primary); background: rgba(255, 255, 255, 0.03); }
+    .tab-btn.active { color: var(--accent-cyan); font-weight: 600; background: rgba(0, 242, 254, 0.06); }
+    .tab-btn.active::after {
+      content: ''; position: absolute; bottom: -1px; left: 0; right: 0; height: 2px;
+      background: linear-gradient(90deg, var(--accent-cyan), var(--accent-blue)); box-shadow: 0 0 10px var(--accent-cyan);
+    }
+    .tab-counter { background: rgba(255, 255, 255, 0.08); font-size: 0.7rem; padding: 0.15rem 0.45rem; border-radius: 9999px; }
+    .tab-pane { display: none; }
+    .tab-pane.active { display: block; animation: fadeIn 0.25s ease forwards; }
+    @keyframes fadeIn { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: translateY(0); } }
+  </style>
+</head>
+  <style>
+    .queue-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 1rem; margin-bottom: 1.25rem; flex-wrap: wrap; }
+    .filter-group { display: flex; align-items: center; gap: 0.4rem; flex-wrap: wrap; }
+    .filter-chip {
+      background: rgba(255, 255, 255, 0.04); border: 1px solid var(--border-subtle); color: var(--text-secondary);
+      font-size: 0.75rem; font-weight: 500; padding: 0.35rem 0.75rem; border-radius: 9999px; cursor: pointer;
+    }
+    .filter-chip.active { background: rgba(0, 242, 254, 0.15); border-color: var(--border-focus); color: var(--accent-cyan); }
+    .search-input {
+      background: rgba(15, 23, 42, 0.6); border: 1px solid var(--border-subtle); border-radius: var(--radius-md);
+      color: var(--text-primary); padding: 0.4rem 0.85rem; font-size: 0.82rem; width: 240px;
+    }
+    .search-input:focus { outline: none; border-color: var(--accent-cyan); }
+    .alerts-list { display: flex; flex-direction: column; gap: 1rem; }
+    .alert-card {
+      background: var(--bg-surface-card); backdrop-filter: blur(12px); border: 1px solid var(--border-subtle);
+      border-radius: var(--radius-lg); padding: 1.25rem 1.5rem; display: grid; grid-template-columns: auto 1fr auto;
+      gap: 1.5rem; align-items: center; box-shadow: var(--shadow-sm); cursor: pointer; transition: all 0.2s ease;
+    }
+    .alert-card:hover { transform: translateX(3px); border-color: rgba(255, 255, 255, 0.18); }
+    .alert-card.severity-Critical { border-left: 4px solid var(--crit-color); }
+    .alert-card.severity-High { border-left: 4px solid var(--high-color); }
+    .alert-card.severity-Medium { border-left: 4px solid var(--med-color); }
+    .alert-card.severity-Low { border-left: 4px solid var(--low-color); }
+    .score-gauge {
+      width: 60px; height: 60px; border-radius: 50%; display: flex; flex-direction: column;
+      align-items: center; justify-content: center; font-weight: 800; font-size: 1.15rem;
+      background: rgba(15, 23, 42, 0.8); border: 2px solid;
+    }
+    .score-gauge.Critical { border-color: var(--crit-color); color: var(--crit-color); box-shadow: 0 0 16px rgba(244, 63, 94, 0.3); }
+    .score-gauge.High { border-color: var(--high-color); color: var(--high-color); box-shadow: 0 0 16px rgba(249, 115, 22, 0.3); }
+    .score-gauge.Medium { border-color: var(--med-color); color: var(--med-color); }
+    .score-gauge.Low { border-color: var(--low-color); color: var(--low-color); }
+    .score-sub { font-size: 0.55rem; font-weight: 600; text-transform: uppercase; opacity: 0.8; }
+    .alert-content { display: flex; flex-direction: column; gap: 0.4rem; }
+    .alert-header-line { display: flex; align-items: center; gap: 0.65rem; flex-wrap: wrap; }
+    .severity-badge {
+      font-size: 0.68rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em;
+      padding: 0.2rem 0.55rem; border-radius: var(--radius-sm);
+    }
+    .severity-badge.Critical { background: var(--crit-bg); color: var(--crit-color); border: 1px solid var(--crit-border); }
+    .severity-badge.High { background: var(--high-bg); color: var(--high-color); border: 1px solid var(--high-border); }
+    .severity-badge.Medium { background: var(--med-bg); color: var(--med-color); border: 1px solid var(--med-border); }
+    .severity-badge.Low { background: var(--low-bg); color: var(--low-color); border: 1px solid var(--low-border); }
+    .tech-badge {
+      font-family: 'JetBrains Mono', monospace; font-size: 0.72rem; background: rgba(0, 242, 254, 0.1);
+      color: var(--accent-cyan); border: 1px solid rgba(0, 242, 254, 0.3); padding: 0.18rem 0.5rem;
+      border-radius: var(--radius-sm); font-weight: 600;
+    }
+    .alert-title { font-size: 0.98rem; font-weight: 600; color: var(--text-primary); }
+    .alert-summary { font-size: 0.85rem; color: #cbd5e1; line-height: 1.4; }
+    .alert-meta { display: flex; align-items: center; gap: 1rem; font-size: 0.74rem; color: var(--text-muted); font-family: 'JetBrains Mono', monospace; flex-wrap: wrap; }
+    .alert-actions { display: flex; flex-direction: column; align-items: flex-end; gap: 0.5rem; }
+    .disposition-select {
+      background: rgba(15, 23, 42, 0.8); border: 1px solid var(--border-subtle); color: var(--text-secondary);
+      border-radius: var(--radius-sm); padding: 0.3rem 0.6rem; font-size: 0.75rem; cursor: pointer;
+    }
+    .chain-container { display: grid; grid-template-columns: 1fr 340px; gap: 1.5rem; }
+    @media (max-width: 1024px) { .chain-container { grid-template-columns: 1fr; } }
+    .timeline { position: relative; padding-left: 2rem; display: flex; flex-direction: column; gap: 1.5rem; }
+    .timeline::before {
+      content: ''; position: absolute; left: 7px; top: 10px; bottom: 10px; width: 2px;
+      background: linear-gradient(180deg, var(--crit-color) 0%, var(--high-color) 50%, var(--accent-cyan) 100%);
+    }
+    .timeline-node {
+      position: relative; background: var(--bg-surface-card); border: 1px solid var(--border-subtle);
+      border-radius: var(--radius-lg); padding: 1.25rem 1.5rem;
+    }
+    .timeline-node::before {
+      content: ''; position: absolute; left: -2.35rem; top: 1.4rem; width: 14px; height: 14px;
+      border-radius: 50%; background: var(--bg-primary); border: 3px solid var(--accent-cyan);
+    }
+    .timeline-node.crit::before { border-color: var(--crit-color); box-shadow: 0 0 10px var(--crit-color); }
+    .timeline-node.high::before { border-color: var(--high-color); box-shadow: 0 0 10px var(--high-color); }
+    .node-stage { font-size: 0.72rem; text-transform: uppercase; font-weight: 700; color: var(--accent-cyan); margin-bottom: 0.25rem; }
+    .node-title { font-size: 1.05rem; font-weight: 700; margin-bottom: 0.5rem; }
+    .node-body { font-size: 0.85rem; color: var(--text-secondary); margin-bottom: 0.75rem; }
+    .exec-summary-card {
+      background: var(--bg-surface-card); border: 1px solid var(--border-subtle); border-radius: var(--radius-lg);
+      padding: 1.5rem; display: flex; flex-direction: column; gap: 1rem;
+    }
+    .exec-narrative {
+      font-size: 0.85rem; color: #cbd5e1; line-height: 1.6; background: rgba(15, 23, 42, 0.4);
+      padding: 1rem; border-radius: var(--radius-md); border: 1px solid rgba(255, 255, 255, 0.04);
+      white-space: pre-line;
+    }
+    .playbook-item {
+      background: rgba(15, 23, 42, 0.5); border: 1px solid var(--border-subtle); border-radius: var(--radius-md);
+      padding: 0.85rem; display: flex; flex-direction: column; gap: 0.35rem;
+    }
+    .playbook-badge { font-size: 0.65rem; font-weight: 700; color: var(--crit-color); text-transform: uppercase; }
+    .playbook-title { font-size: 0.82rem; font-weight: 600; color: var(--text-primary); }
+    .playbook-code {
+      background: #000000; font-family: 'JetBrains Mono', monospace; font-size: 0.72rem;
+      padding: 0.4rem 0.6rem; border-radius: var(--radius-sm); color: #38bdf8; overflow-x: auto;
+    }
+    .table-card { background: var(--bg-surface-card); border: 1px solid var(--border-subtle); border-radius: var(--radius-lg); overflow: hidden; }
+    table { width: 100%; border-collapse: collapse; text-align: left; font-size: 0.85rem; }
+    th {
+      background: rgba(15, 23, 42, 0.9); padding: 0.85rem 1.25rem; color: var(--text-muted);
+      font-weight: 600; text-transform: uppercase; font-size: 0.72rem; border-bottom: 1px solid var(--border-subtle);
+    }
+    td { padding: 1rem 1.25rem; border-bottom: 1px solid rgba(255, 255, 255, 0.04); color: var(--text-secondary); }
+    .code-snippet {
+      font-family: 'JetBrains Mono', monospace; background: rgba(0, 0, 0, 0.4); border: 1px solid rgba(255, 255, 255, 0.06);
+      padding: 0.5rem 0.75rem; border-radius: var(--radius-sm); color: #e2e8f0; font-size: 0.76rem;
+      white-space: pre-wrap; word-break: break-all;
+    }
+    .sim-grid { display: grid; grid-template-columns: 360px 1fr; gap: 1.5rem; }
+    @media (max-width: 900px) { .sim-grid { grid-template-columns: 1fr; } }
+    .sim-controls {
+      background: var(--bg-surface-card); border: 1px solid var(--border-subtle); border-radius: var(--radius-lg);
+      padding: 1.5rem; display: flex; flex-direction: column; gap: 1rem;
+    }
+    .sim-button-card {
+      background: rgba(15, 23, 42, 0.6); border: 1px solid var(--border-subtle); border-radius: var(--radius-md);
+      padding: 1rem; display: flex; flex-direction: column; gap: 0.5rem; cursor: pointer; transition: all 0.2s ease;
+    }
+    .sim-button-card:hover { background: rgba(255, 255, 255, 0.05); border-color: var(--border-focus); transform: translateY(-2px); }
+    .terminal-card {
+      background: #020617; border: 1px solid var(--border-subtle); border-radius: var(--radius-lg);
+      overflow: hidden; display: flex; flex-direction: column; min-height: 480px; font-family: 'JetBrains Mono', monospace;
+    }
+    .terminal-header {
+      background: #0b1120; padding: 0.6rem 1rem; border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+      display: flex; align-items: center; justify-content: space-between; font-size: 0.74rem; color: var(--text-muted);
+    }
+    .terminal-body { padding: 1.25rem; flex: 1; overflow-y: auto; font-size: 0.78rem; line-height: 1.6; display: flex; flex-direction: column; gap: 0.35rem; }
+    .log-line { display: flex; gap: 0.75rem; }
+    .log-time { color: var(--text-muted); }
+    .log-crit { color: var(--crit-color); font-weight: 700; }
+    .log-high { color: var(--high-color); font-weight: 700; }
+    .log-info { color: var(--accent-cyan); font-weight: 600; }
+    .log-msg { color: #f1f5f9; }
+    .chat-box {
+      background: var(--bg-surface-card); border: 1px solid var(--border-subtle); border-radius: var(--radius-lg);
+      padding: 1.5rem; display: flex; flex-direction: column; gap: 1rem; min-height: 400px;
+    }
+    .prompt-chips { display: flex; gap: 0.5rem; flex-wrap: wrap; }
+    .prompt-chip {
+      background: rgba(0, 242, 254, 0.08); border: 1px solid rgba(0, 242, 254, 0.25); color: var(--accent-cyan);
+      font-size: 0.75rem; padding: 0.4rem 0.8rem; border-radius: 9999px; cursor: pointer;
+    }
+    .chat-input-bar { display: flex; gap: 0.75rem; }
+    .chat-input {
+      flex: 1; background: #020617; border: 1px solid var(--border-subtle); border-radius: var(--radius-md);
+      color: var(--text-primary); padding: 0.65rem 1rem; font-size: 0.85rem;
+    }
+    .chat-response {
+      background: rgba(15, 23, 42, 0.5); border: 1px solid var(--border-subtle); border-radius: var(--radius-md);
+      padding: 1.25rem; font-size: 0.85rem; line-height: 1.6; color: #e2e8f0; white-space: pre-line; flex: 1;
+    }
+    .modal-overlay {
+      position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0, 0, 0, 0.75);
+      backdrop-filter: blur(8px); display: none; align-items: center; justify-content: center; z-index: 1000; padding: 1.5rem;
+    }
+    .modal-overlay.active { display: flex; animation: fadeIn 0.2s ease forwards; }
+    .modal-content {
+      background: #0b1120; border: 1px solid var(--border-focus); border-radius: var(--radius-xl);
+      max-width: 720px; width: 100%; max-height: 85vh; overflow-y: auto; display: flex; flex-direction: column;
+    }
+    .modal-header { padding: 1.25rem 1.75rem; border-bottom: 1px solid var(--border-subtle); display: flex; align-items: center; justify-content: space-between; }
+    .modal-close { background: transparent; border: none; color: var(--text-muted); font-size: 1.5rem; cursor: pointer; }
+    .modal-body { padding: 1.5rem 1.75rem; display: flex; flex-direction: column; gap: 1.25rem; font-size: 0.85rem; }
+    .modal-footer { padding: 1.25rem 1.75rem; border-top: 1px solid var(--border-subtle); display: flex; justify-content: flex-end; }
+    footer { border-top: 1px solid var(--border-subtle); padding: 1.5rem; text-align: center; font-size: 0.78rem; color: var(--text-muted); margin-top: 3rem; }
+    footer a { color: var(--accent-cyan); text-decoration: none; }
+  </style>
+<body>
+  <header>
+    <div class="header-container">
+      <a href="/" class="brand">
+        <div class="brand-icon">???</div>
+        <div class="brand-text">
+          <h1>AI-POWERED SOC DASHBOARD</h1>
+          <p>SIEM DETECTION & GRC COMPLIANCE LAB</p>
+        </div>
+      </a>
+      <div class="header-telemetry">
+        <div class="status-pill"><span class="status-dot"></span><span id="engine-status">SOC ENGINE ONLINE</span></div>
+        <div class="status-pill"><span>?</span><span id="telemetry-mode">LAB SANDBOX MODE</span></div>
+        <div class="status-pill"><span>??</span><span>TARGET: ip-172-31-13-183</span></div>
+      </div>
+      <div class="header-actions">
+        <button class="btn btn-primary" onclick="runTriageScan()"><span>?</span> Scan & Triage</button>
+        <button class="btn btn-secondary" onclick="switchTab('tab-sandbox')"><span>??</span> Simulator</button>
+        <button class="btn btn-secondary" onclick="resetState()"><span>??</span> Reset State</button>
+        <a href="https://mustafa-cyberhub.vercel.app/" target="_blank" rel="noopener noreferrer" class="btn btn-link"><span>??</span> Portfolio</a>
+      </div>
+    </div>
+  </header>
+
+  <main>
+    <section class="stats-grid">
+      <div class="stat-card">
+        <div class="stat-header">
+          <span class="stat-title">Threat Posture Index</span>
+          <span class="stat-badge severity-badge Critical" id="posture-label">CRITICAL</span>
+        </div>
+        <div class="stat-main">
+          <span class="stat-value" id="posture-score">95</span>
+          <span class="stat-unit">/ 100</span>
+        </div>
+        <div class="stat-footer"><span>?? Multi-stage active attack chain identified</span></div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-header">
+          <span class="stat-title">Active Detections</span>
+          <span class="stat-badge" id="alert-count-badge" style="background: rgba(255,255,255,0.08);">3 Alerts</span>
+        </div>
+        <div class="stat-main">
+          <span class="stat-value" id="stat-total-alerts">3</span>
+          <span class="stat-unit" id="stat-sev-breakdown">1 Crit ? 2 High</span>
+        </div>
+        <div class="stat-footer"><span>Coverage across 3 MITRE Techniques</span></div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-header">
+          <span class="stat-title">Adversary Origin</span>
+          <span class="stat-badge" style="background: rgba(239,68,68,0.15); color: #ef4444;">EXTERNAL</span>
+        </div>
+        <div class="stat-main">
+          <span class="stat-value" style="font-size: 1.35rem; font-family: 'JetBrains Mono', monospace;" id="stat-src-ip">72.255.58.137</span>
+        </div>
+        <div class="stat-footer"><span>Targeting: ubuntu @ ip-172-31-13-183</span></div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-header">
+          <span class="stat-title">GRC Controls Flagged</span>
+          <span class="stat-badge" style="background: rgba(0,242,254,0.15); color: var(--accent-cyan);">6 CONTROLS</span>
+        </div>
+        <div class="stat-main">
+          <span class="stat-value" style="font-size: 1.35rem;">ISO / NIST</span>
+        </div>
+        <div class="stat-footer"><span>A.8.5, A.8.2, A.8.16 | AC-7, AC-2, AU-6</span></div>
+      </div>
+    </section>
+
+    <nav class="tabs-nav">
+      <button class="tab-btn active" onclick="switchTab('tab-triage', this)">
+        <span>??</span> Alert Triage Feed <span class="tab-counter" id="tab-cnt-alerts">3</span>
+      </button>
+      <button class="tab-btn" onclick="switchTab('tab-chain', this)">
+        <span>??</span> Attack Chain Correlation
+      </button>
+      <button class="tab-btn" onclick="switchTab('tab-matrix', this)">
+        <span>???</span> MITRE ATT&CK Matrix
+      </button>
+      <button class="tab-btn" onclick="switchTab('tab-compliance', this)">
+        <span>??</span> GRC Compliance Mapping
+      </button>
+      <button class="tab-btn" onclick="switchTab('tab-sandbox', this)">
+        <span>??</span> Attack Simulator
+      </button>
+      <button class="tab-btn" onclick="switchTab('tab-copilot', this)">
+        <span>??</span> AI SOC Analyst Copilot
+      </button>
+    </nav>
+
+    <section id="tab-triage" class="tab-pane active">
+      <div class="queue-toolbar">
+        <div class="filter-group">
+          <button class="filter-chip active" onclick="filterSeverity('all', this)">All Severities</button>
+          <button class="filter-chip" onclick="filterSeverity('Critical', this)">Critical</button>
+          <button class="filter-chip" onclick="filterSeverity('High', this)">High</button>
+          <button class="filter-chip" onclick="filterSeverity('Medium', this)">Medium</button>
+          <button class="filter-chip" onclick="filterSeverity('Low', this)">Low</button>
+        </div>
+        <input type="text" class="search-input" id="search-box" placeholder="Filter alerts, IP, or user..." oninput="handleSearch(this.value)">
+      </div>
+      <div class="alerts-list" id="alerts-container"></div>
+    </section>
+
+    <section id="tab-chain" class="tab-pane">
+      <div class="chain-container">
+        <div class="timeline" id="chain-timeline"></div>
+        <div class="exec-summary-card">
+          <h3 style="font-size: 1rem; font-weight: 700; color: #fff;"><span>??</span> Executive Incident Story</h3>
+          <div class="exec-narrative" id="chain-narrative">Loading executive incident narrative...</div>
+          <h3 style="font-size: 1rem; font-weight: 700; color: #fff; margin-top: 0.5rem;"><span>???</span> Containment Playbook</h3>
+          <div id="chain-playbook" style="display: flex; flex-direction: column; gap: 0.75rem;"></div>
+        </div>
+      </div>
+    </section>
+
+    <section id="tab-matrix" class="tab-pane">
+      <div class="table-card">
+        <table>
+          <thead>
+            <tr>
+              <th>Technique ID</th><th>Technique Name</th><th>Tactic</th><th>Log Source</th><th>Threshold Rationale</th><th>SPL Detection Search</th>
+            </tr>
+          </thead>
+          <tbody id="matrix-tbody"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section id="tab-compliance" class="tab-pane">
+      <div class="table-card">
+        <table>
+          <thead>
+            <tr>
+              <th>Technique</th><th>ISO 27001:2022</th><th>NIST SP 800-53 Rev 5</th><th>Audit Justification Rationale</th><th>Verification Proof</th><th>Status</th>
+            </tr>
+          </thead>
+          <tbody id="compliance-tbody"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section id="tab-sandbox" class="tab-pane">
+      <div class="sim-grid">
+        <div class="sim-controls">
+          <div style="font-size: 0.95rem; font-weight: 700; color: var(--text-primary); margin-bottom: 0.25rem;">Interactive Threat Sandbox</div>
+          <p style="font-size: 0.78rem; color: var(--text-secondary); line-height: 1.4;">
+            Inject genuine simulated adversary campaigns into the SIEM pipeline to observe real-time detection, scoring, deduplication, and AI correlation.
+          </p>
+          <div class="sim-button-card" onclick="simulateScenario('t1110_brute_force')">
+            <div class="sim-title"><span>??</span> Hydra SSH Brute Force</div>
+            <div class="sim-desc">Injects 42 consecutive failed password attempts against user 'ubuntu' (T1110 - Score 100 [CRIT]).</div>
+          </div>
+          <div class="sim-button-card" onclick="simulateScenario('t1078_compromise')">
+            <div class="sim-title"><span>??</span> Compromised Account Login</div>
+            <div class="sim-desc">Injects successful login for 'ubuntu' following prior failed brute-force burst (T1078 - Score 98 [CRIT]).</div>
+          </div>
+          <div class="sim-button-card" onclick="simulateScenario('t1059_payload')">
+            <div class="sim-title"><span>?</span> Suspicious Payload Retrieval</div>
+            <div class="sim-desc">Injects auditd EXECVE record of curl/wget downloading backdoor.elf (T1059 - Score 75 [HIGH]).</div>
+          </div>
+          <div class="sim-button-card" style="border-color: rgba(244,63,94,0.4);" onclick="simulateScenario('full_chain')">
+            <div class="sim-title" style="color: var(--crit-color);"><span>??</span> Full Multi-Stage Kill Chain</div>
+            <div class="sim-desc">Simulates full adversary lifecycle: Hydra Cracking ? Account Takeover ? Payload Staging.</div>
+          </div>
+          <button class="btn btn-secondary" style="width: 100%; margin-top: 0.5rem;" onclick="simulateScenario('reset')"><span>??</span> Reset to Clean Lab Baseline</button>
+        </div>
+        <div class="terminal-card">
+          <div class="terminal-header">
+            <div class="term-dots"><span class="term-dot dot-red"></span><span class="term-dot dot-yellow"></span><span class="term-dot dot-green"></span></div>
+            <span>SIEM INGESTION FEED: /var/log/auth.log & /var/log/audit/audit.log</span>
+            <span style="color: var(--accent-cyan);">STREAMING</span>
+          </div>
+          <div class="terminal-body" id="terminal-logs"></div>
+        </div>
+      </div>
+    </section>
+
+    <section id="tab-copilot" class="tab-pane">
+      <div style="max-width: 900px; margin: 0 auto;">
+        <div class="chat-box">
+          <div style="display: flex; align-items: center; justify-content: space-between;">
+            <div style="font-size: 1.05rem; font-weight: 700; display: flex; align-items: center; gap: 0.5rem;"><span>??</span> AI SOC Analyst Copilot</div>
+            <span class="stat-badge" style="background: rgba(0,242,254,0.15); color: var(--accent-cyan);">CONTEXT-AWARE</span>
+          </div>
+          <div class="prompt-chips">
+            <button class="prompt-chip" onclick="askCopilot('ciso brief')">? CISO Incident Brief</button>
+            <button class="prompt-chip" onclick="askCopilot('containment script')">?? Automated Containment Script</button>
+            <button class="prompt-chip" onclick="askCopilot('scoring formulas')">?? Explain T1110 Scoring Rule</button>
+            <button class="prompt-chip" onclick="askCopilot('compliance audit')">?? ISO 27001 & NIST Audit Statement</button>
+          </div>
+          <div class="chat-response" id="copilot-response">
+?? Greetings, Analyst. I have indexed the active telemetry across all MITRE detections on target host ip-172-31-13-183.
+
+Click any quick prompt above or ask a question regarding containment, root cause analysis, or compliance audit evidence.
+          </div>
+          <div class="chat-input-bar">
+            <input type="text" class="chat-input" id="copilot-input" placeholder="Ask AI analyst (e.g. 'How do I contain the attacker IP?', 'What controls were violated?')..." onkeydown="if(event.key==='Enter') submitCopilot()">
+            <button class="btn btn-primary" onclick="submitCopilot()">Ask Copilot</button>
+          </div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <div class="modal-overlay" id="event-modal">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h3 id="modal-title">Event Detail Inspection</h3>
+        <button class="modal-close" onclick="closeModal()">&times;</button>
+      </div>
+      <div class="modal-body" id="modal-body"></div>
+      <div class="modal-footer"><button class="btn btn-secondary" onclick="closeModal()">Close</button></div>
+    </div>
+  </div>
+
+  <footer>
+    <p>
+      ??? <strong>AI-Powered SOC Dashboard</strong> ? Detection Engineering & GRC Compliance Lab ? 
+      Author: <a href="https://mustafa-cyberhub.vercel.app/" target="_blank">Mustafa Muhammad</a> ? 
+      <a href="https://github.com/Mustafa-Hazard/ai-powered-soc-dashboard" target="_blank">GitHub Repository</a>
+    </p>
+  </footer>
+  <script>
+    let alertsData = [];
+    let activeFilter = 'all';
+    let searchQuery = '';
+
+    async function loadHealth() {
+      try {
+        const res = await fetch('/api/health');
+        const data = await res.json();
+        document.getElementById('engine-status').textContent = 'SOC ENGINE ' + (data.status === 'online' ? 'ONLINE' : 'OFFLINE');
+        document.getElementById('telemetry-mode').textContent = (data.mode || 'LAB SANDBOX').toUpperCase();
+      } catch (err) {
+        console.error('Health fetch failed:', err);
+      }
+    }
+
+    async function loadAlerts() {
+      try {
+        const res = await fetch('/api/alerts');
+        const data = await res.json();
+        alertsData = data.alerts || [];
+
+        document.getElementById('posture-score').textContent = data.overall_score || 0;
+        const postureLabel = document.getElementById('posture-label');
+        postureLabel.textContent = (data.overall_posture || 'CLEAN').toUpperCase();
+        postureLabel.className = 'stat-badge severity-badge ' + (data.overall_posture || 'Low');
+
+        document.getElementById('stat-total-alerts').textContent = data.total || 0;
+        document.getElementById('alert-count-badge').textContent = `${data.total || 0} Alerts`;
+        document.getElementById('tab-cnt-alerts').textContent = data.total || 0;
+
+        const counts = data.severity_counts || {};
+        document.getElementById('stat-sev-breakdown').textContent = 
+          `${counts.critical || 0} Crit ? ${counts.high || 0} High ? ${counts.medium || 0} Med`;
+
+        if (alertsData.length > 0) {
+          const raw = alertsData[0].raw_event || {};
+          if (raw.src_ip) document.getElementById('stat-src-ip').textContent = raw.src_ip;
+        }
+
+        renderAlerts();
+      } catch (err) {
+        console.error('Alerts fetch failed:', err);
+      }
+    }
+
+    function renderAlerts() {
+      const container = document.getElementById('alerts-container');
+      container.innerHTML = '';
+
+      let filtered = alertsData;
+      if (activeFilter !== 'all') {
+        filtered = filtered.filter(a => (a.severity || '').toLowerCase() === activeFilter.toLowerCase());
+      }
+      if (searchQuery.trim()) {
+        const q = searchQuery.toLowerCase();
+        filtered = filtered.filter(a => 
+          (a.technique_id || '').toLowerCase().includes(q) ||
+          (a.technique_name || '').toLowerCase().includes(q) ||
+          (a.summary || '').toLowerCase().includes(q) ||
+          (a.raw_event?.src_ip || '').toLowerCase().includes(q) ||
+          (a.raw_event?.user || '').toLowerCase().includes(q)
+        );
+      }
+
+      if (filtered.length === 0) {
+        container.innerHTML = `
+          <div style="text-align: center; padding: 3rem; background: var(--bg-surface-card); border-radius: var(--radius-lg); border: 1px solid var(--border-subtle); color: var(--text-muted);">
+            <h3>No alerts matching the selected criteria</h3>
+            <p style="margin-top: 0.5rem; font-size: 0.85rem;">Run an attack simulation in the Attack Simulator to inject fresh telemetry.</p>
+          </div>
+        `;
+        return;
+      }
+
+      filtered.forEach((alert) => {
+        const card = document.createElement('div');
+        card.className = `alert-card severity-${alert.severity}`;
+        card.onclick = (e) => {
+          if (e.target.tagName !== 'SELECT' && e.target.tagName !== 'OPTION') {
+            inspectAlert(alert);
+          }
+        };
+
+        const raw = alert.raw_event || {};
+        const srcIp = raw.src_ip || 'Internal / N/A';
+        const user = raw.user || 'system';
+        const timeStr = raw._time || new Date().toISOString();
+
+        card.innerHTML = `
+          <div class="score-gauge ${alert.severity}">
+            <span>${alert.score || 0}</span>
+            <span class="score-sub">SCORE</span>
+          </div>
+
+          <div class="alert-content">
+            <div class="alert-header-line">
+              <span class="severity-badge ${alert.severity}">${alert.severity}</span>
+              <span class="tech-badge">${alert.technique_id}</span>
+              <span class="alert-title">${alert.technique_name}</span>
+            </div>
+            <div class="alert-summary">${alert.summary}</div>
+            <div class="alert-meta">
+              <span>?? ${timeStr}</span>
+              <span>??? Host: ${raw.host || 'ip-172-31-13-183'}</span>
+              <span>?? Source IP: ${srcIp}</span>
+              <span>?? User: ${user}</span>
+            </div>
+          </div>
+
+          <div class="alert-actions">
+            <select class="disposition-select" onchange="updateDisposition('${alert.hash}', this.value)" onclick="event.stopPropagation()">
+              <option value="New" ${alert.disposition === 'New' ? 'selected' : ''}>Status: New</option>
+              <option value="Investigating" ${alert.disposition === 'Investigating' ? 'selected' : ''}>Status: Investigating</option>
+              <option value="Escalated" ${alert.disposition === 'Escalated' ? 'selected' : ''}>Status: Escalated</option>
+              <option value="Resolved" ${alert.disposition === 'Resolved' ? 'selected' : ''}>Status: Resolved</option>
+            </select>
+            <button class="btn btn-secondary" style="font-size: 0.72rem; padding: 0.25rem 0.6rem;">
+              Inspect Details ?
+            </button>
+          </div>
+        `;
+
+        container.appendChild(card);
+      });
+    }
+
+    async function updateDisposition(hash, status) {
+      try {
+        await fetch(`/api/alerts/${hash}/status`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ status })
+        });
+      } catch (err) {
+        console.error('Update status failed:', err);
+      }
+    }
+
+    function filterSeverity(sev, el) {
+      activeFilter = sev;
+      document.querySelectorAll('.filter-chip').forEach(c => c.classList.remove('active'));
+      el.classList.add('active');
+      renderAlerts();
+    }
+
+    function handleSearch(val) {
+      searchQuery = val;
+      renderAlerts();
+    }
+
+    function inspectAlert(alert) {
+      document.getElementById('modal-title').textContent = `${alert.technique_id} ? ${alert.technique_name}`;
+      const body = document.getElementById('modal-body');
+      const raw = alert.raw_event || {};
+
+      body.innerHTML = `
+        <div>
+          <div style="font-weight: 700; color: #fff; margin-bottom: 0.35rem;">Analyst Summary</div>
+          <div style="color: #cbd5e1; background: rgba(15,23,42,0.4); padding: 0.75rem; border-radius: var(--radius-sm); border: 1px solid var(--border-subtle);">${alert.summary}</div>
+        </div>
+        <div>
+          <div style="font-weight: 700; color: #fff; margin-bottom: 0.35rem;">Scoring Logic Breakdown</div>
+          <div style="font-size: 0.8rem; color: #cbd5e1; background: rgba(0,0,0,0.3); padding: 0.75rem; border-radius: var(--radius-sm); border: 1px solid var(--border-subtle);">
+            Severity Score: <strong>${alert.score}/100 [${alert.severity}]</strong><br>
+            Formula: Calculated based on transparent heuristics. Auditable and rule-based.
+          </div>
+        </div>
+        <div>
+          <div style="font-weight: 700; color: #fff; margin-bottom: 0.35rem;">Raw Log Entry (SIEM Capture)</div>
+          <div class="code-snippet">${raw.raw_log || JSON.stringify(raw, null, 2)}</div>
+        </div>
+        <div>
+          <div style="font-weight: 700; color: #fff; margin-bottom: 0.35rem;">Production Splunk Search (SPL)</div>
+          <div class="code-snippet">${alert.spl_query || 'N/A'}</div>
+        </div>
+        <div>
+          <div style="font-weight: 700; color: #fff; margin-bottom: 0.35rem;">GRC Compliance Mapping</div>
+          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem;">
+            <div style="background: rgba(15,23,42,0.6); padding: 0.75rem; border-radius: var(--radius-sm); border: 1px solid var(--border-subtle);">
+              <div style="font-size: 0.7rem; color: var(--accent-cyan); font-weight: 700;">ISO 27001:2022</div>
+              <div style="font-size: 0.82rem; font-weight: 600;">${alert.iso_control || 'A.8.5 (Secure authentication)'}</div>
+            </div>
+            <div style="background: rgba(15,23,42,0.6); padding: 0.75rem; border-radius: var(--radius-sm); border: 1px solid var(--border-subtle);">
+              <div style="font-size: 0.7rem; color: #f59e0b; font-weight: 700;">NIST SP 800-53 Rev 5</div>
+              <div style="font-size: 0.82rem; font-weight: 600;">${alert.nist_control || 'AC-7 (Unsuccessful Logon Attempts)'}</div>
+            </div>
+          </div>
+        </div>
+      `;
+      document.getElementById('event-modal').classList.add('active');
+    }
+
+    function closeModal() {
+      document.getElementById('event-modal').classList.remove('active');
+    }
+
+    async function loadSummary() {
+      try {
+        const res = await fetch('/api/summary');
+        const data = await res.json();
+        document.getElementById('chain-narrative').textContent = data.executive_summary || 'No narrative available.';
+
+        const timeline = document.getElementById('chain-timeline');
+        timeline.innerHTML = '';
+        (data.attack_chain || []).forEach(node => {
+          const div = document.createElement('div');
+          const isCrit = node.severity === 'Critical';
+          div.className = `timeline-node ${isCrit ? 'crit' : 'high'}`;
+          div.innerHTML = `
+            <div class="node-stage">${node.stage}</div>
+            <div class="node-title">${node.technique_id} ? ${node.technique_name}</div>
+            <div class="node-body">${node.summary}</div>
+            <div class="alert-meta">
+              <span class="severity-badge ${node.severity}">Score: ${node.score}/100</span>
+              <span>Host: ${node.raw_event?.host || 'ip-172-31-13-183'}</span>
+            </div>
+          `;
+          timeline.appendChild(div);
+        });
+
+        const playbookContainer = document.getElementById('chain-playbook');
+        playbookContainer.innerHTML = '';
+        (data.recommendations || []).forEach(r => {
+          const div = document.createElement('div');
+          div.className = 'playbook-item';
+          div.innerHTML = `
+            <span class="playbook-badge">${r.priority}</span>
+            <span class="playbook-title">${r.action}</span>
+            <div class="playbook-code">${r.command}</div>
+            <span style="font-size: 0.72rem; color: var(--text-secondary);">${r.detail}</span>
+          `;
+          playbookContainer.appendChild(div);
+        });
+      } catch (err) {
+        console.error('Summary fetch failed:', err);
+      }
+    }
+
+    async function loadMatrix() {
+      try {
+        const res = await fetch('/api/matrix');
+        const data = await res.json();
+        const tbody = document.getElementById('matrix-tbody');
+        tbody.innerHTML = '';
+        (data.matrix || []).forEach(item => {
+          const tr = document.createElement('tr');
+          tr.innerHTML = `
+            <td><span class="tech-badge">${item.id}</span></td>
+            <td style="font-weight: 600; color: #fff;">${item.name}</td>
+            <td><span class="stat-badge" style="background: rgba(121,40,202,0.15); color: #c084fc;">${item.tactic}</span></td>
+            <td>${(item.log_sources || []).join(', ')}</td>
+            <td style="font-size: 0.8rem;">${item.detection_threshold}</td>
+            <td><div class="code-snippet">${item.spl_query}</div></td>
+          `;
+          tbody.appendChild(tr);
+        });
+      } catch (err) {
+        console.error('Matrix fetch failed:', err);
+      }
+    }
+
+    async function loadCompliance() {
+      try {
+        const res = await fetch('/api/compliance');
+        const data = await res.json();
+        const tbody = document.getElementById('compliance-tbody');
+        tbody.innerHTML = '';
+        (data.mappings || []).forEach(item => {
+          const tr = document.createElement('tr');
+          tr.innerHTML = `
+            <td><span class="tech-badge">${item.technique_id}</span> <span style="font-size: 0.8rem; color: #fff;">${item.technique_name}</span></td>
+            <td><strong style="color: var(--accent-cyan);">${item.iso_control}</strong><br><span style="font-size: 0.75rem;">${item.iso_title}</span></td>
+            <td><strong style="color: #f59e0b;">${item.nist_control}</strong><br><span style="font-size: 0.75rem;">${item.nist_title}</span></td>
+            <td style="font-size: 0.8rem; line-height: 1.4; max-width: 320px;">${item.audit_rationale}</td>
+            <td style="font-size: 0.75rem; font-family: 'JetBrains Mono', monospace;">${item.evidence_source}</td>
+            <td><span class="stat-badge" style="background: rgba(16,185,129,0.15); color: #10b981;">${item.status}</span></td>
+          `;
+          tbody.appendChild(tr);
+        });
+      } catch (err) {
+        console.error('Compliance fetch failed:', err);
+      }
+    }
+
+    async function simulateScenario(scenario) {
+      appendLog('INFO', `Simulating scenario: ${scenario}...`);
+      try {
+        const res = await fetch('/api/simulate', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ scenario })
+        });
+        const data = await res.json();
+        appendLog('SUCCESS', `Scenario [${scenario}] executed. Telemetry updated.`);
+        await loadAlerts();
+        await loadSummary();
+      } catch (err) {
+        appendLog('ERROR', `Simulation error: ${err.message}`);
+      }
+    }
+
+    function appendLog(level, msg) {
+      const logs = document.getElementById('terminal-logs');
+      if (!logs) return;
+      const time = new Date().toISOString().split('T')[1].replace('Z', '');
+      const div = document.createElement('div');
+      div.className = 'log-line';
+      const lvlClass = level === 'CRIT' ? 'log-crit' : (level === 'HIGH' ? 'log-high' : 'log-info');
+      div.innerHTML = `<span class="log-time">[${time}]</span> <span class="${lvlClass}">[${level}]</span> <span class="log-msg">${msg}</span>`;
+      logs.appendChild(div);
+      logs.scrollTop = logs.scrollHeight;
+    }
+
+    async function runTriageScan() {
+      appendLog('INFO', 'Executing on-demand SOC triage pipeline scan...');
+      try {
+        const res = await fetch('/api/triage/run', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ use_dedup: true })
+        });
+        const data = await res.json();
+        appendLog('SUCCESS', `Triage scan completed: ${data.alerts_triaged} alert(s) evaluated.`);
+        await loadAlerts();
+        await loadSummary();
+      } catch (err) {
+        appendLog('ERROR', `Scan error: ${err.message}`);
+      }
+    }
+
+    async function resetState() {
+      if (confirm('Clear alert state deduplication and reload default lab telemetry?')) {
+        try {
+          await fetch('/api/state/reset', { method: 'POST' });
+          appendLog('INFO', 'Alert state and deduplication cache reset to initial baseline.');
+          await loadAlerts();
+          await loadSummary();
+        } catch (err) {
+          console.error('Reset failed:', err);
+        }
+      }
+    }
+
+    async function askCopilot(query) {
+      document.getElementById('copilot-input').value = query;
+      submitCopilot();
+    }
+
+    async function submitCopilot() {
+      const input = document.getElementById('copilot-input');
+      const query = input.value.trim();
+      if (!query) return;
+
+      const respBox = document.getElementById('copilot-response');
+      respBox.textContent = 'Analyzing active SIEM detections and generating SOC response...';
+
+      try {
+        const res = await fetch('/api/ai/ask', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ query })
+        });
+        const data = await res.json();
+        respBox.textContent = data.response || 'No response generated.';
+      } catch (err) {
+        respBox.textContent = 'Copilot request failed: ' + err.message;
+      }
+    }
+
+    function switchTab(tabId, btn) {
+      document.querySelectorAll('.tab-pane').forEach(p => p.classList.remove('active'));
+      document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+      document.getElementById(tabId).classList.add('active');
+      if (btn) btn.classList.add('active');
+    }
+
+    window.addEventListener('DOMContentLoaded', async () => {
+      await loadHealth();
+      await loadAlerts();
+      await loadSummary();
+      await loadMatrix();
+      await loadCompliance();
+      appendLog('INFO', 'Connected to SOC Triage Engine v2.0.');
+      appendLog('INFO', 'Target Host ip-172-31-13-183 (AWS EC2) telemetry stream active.');
+      appendLog('CRIT', 'Hydra SSH brute-force detected from 72.255.58.137 (36 failed attempts).');
+      appendLog('HIGH', 'Successful login accepted for user ubuntu from 72.255.58.137.');
+      appendLog('HIGH', 'Auditd EXECVE captured wget payload retrieval on ip-172-31-13-183.');
+    });
+  </script>
+</body>
+</html>

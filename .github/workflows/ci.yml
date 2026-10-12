@@ -1,4 +1,4 @@
-name: Triage Layer CI
+name: Triage Layer & Web Dashboard CI
 
 on:
   push:
@@ -6,12 +6,19 @@ on:
     paths:
       - "triage/**"
       - "tests/**"
+      - "api/**"
+      - "main.py"
+      - "requirements.txt"
+      - "vercel.json"
       - ".github/workflows/ci.yml"
   pull_request:
     branches: [main]
     paths:
       - "triage/**"
       - "tests/**"
+      - "api/**"
+      - "main.py"
+      - "requirements.txt"
 
 jobs:
   lint-test-and-build:
@@ -33,7 +40,7 @@ jobs:
           pip install -r triage/requirements.txt
 
       - name: Lint with ruff
-        run: ruff check triage tests
+        run: ruff check triage tests main.py api
 
       - name: Type check with mypy
         run: mypy triage
